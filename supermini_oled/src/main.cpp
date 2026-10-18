@@ -4,6 +4,7 @@
 #include <ASHClient.h>
 #include <Command.h>
 #include <ConnectInfo.h>
+#include <DHT.h>
 
 ASHClient net;
 
@@ -30,6 +31,36 @@ unsigned long displayLastDraw = 0;
 const char *WEEKDAYS[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 const char *MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+
+// DHT11 sensor
+
+DHT dht(GPIO_NUM_0, DHT11);
+const unsigned long DHT_READ_INTERVAL = 120000;
+unsigned long dhtLastRead = 0;
+float temperature = NAN;
+float humidity = NAN;
+
+void updateDHT()
+{
+    unsigned long now = millis();
+    if (now - dhtLastRead >= DHT_READ_INTERVAL)
+    {
+        dhtLastRead = now;
+
+        humidity = dht.readHumidity();
+        temperature = dht.readTemperature();
+
+        if (isnan(temperature) || isnan(humidity))
+        {
+            net.send(Command::log("temperature or humidity is not a number").toString());
+        }
+        else
+        {
+            net.send(Command::setValue("esp_oled_temperature", String(temperature, 1)).toString());
+            net.send(Command::setValue("esp_oled_humidity", String(humidity, 1)).toString());
+        }
+    }
+}
 
 unsigned long currentUnixTime()
 {
@@ -96,6 +127,32 @@ static void drawServerIcon(int x, int y, bool connected)
     }
 }
 
+static void drawClimate(int y)
+{
+    char buf[16];
+    display.setTextSize(1);
+
+    display.setCursor(2, y);
+    if (isnan(temperature))
+    {
+        display.print("T --");
+    }
+    else
+    {
+        snprintf(buf, sizeof(buf), "T %.1f", temperature);
+        display.print(buf);
+        display.write(247); // %
+        display.print("C");
+    }
+
+    if (isnan(humidity))
+        snprintf(buf, sizeof(buf), "H --");
+    else
+        snprintf(buf, sizeof(buf), "H %.0f%%", humidity);
+    display.setCursor(display.width() - 2 - strlen(buf) * 6, y);
+    display.print(buf);
+}
+
 void updateDisplay()
 {
     unsigned long now = millis();
@@ -128,13 +185,15 @@ void updateDisplay()
         snprintf(buf, sizeof(buf), "%02d%c%02d",
                  tm.tm_hour, (tm.tm_sec % 2 == 0) ? ':' : ' ', tm.tm_min);
         display.setTextSize(3);
-        display.setCursor(2, 22);
+        display.setCursor(2, 16);
         display.print(buf);
 
         snprintf(buf, sizeof(buf), "%02d", tm.tm_sec);
         display.setTextSize(2);
-        display.setCursor(102, 30);
+        display.setCursor(102, 24);
         display.print(buf);
+
+        drawClimate(45);
 
         int w = (display.width() - 4) * tm.tm_sec / 59;
         display.drawRect(0, 56, display.width(), 5, SSD1306_WHITE);
@@ -143,7 +202,7 @@ void updateDisplay()
     else
     {
         display.drawFastHLine(0, 11, display.width(), SSD1306_WHITE);
-        drawCentered("Syncing time...", 1, 32);
+        drawCentered("Syncing...", 2, 32);
     }
 
     display.display();
@@ -152,7 +211,7 @@ void updateDisplay()
 void onConnect()
 {
     Serial.println("connected");
-    net.send("GREETING date&time");
+    net.send("GREETING esp_oled");
     dtLastRequest = millis();
     net.send(Command::message("cur_dt").toString());
 }
@@ -198,6 +257,21 @@ void setup()
             delay(1000);
     }
 
+    dht.begin();
+
+    temperature = dht.readTemperature();
+    humidity = dht.readHumidity();
+
+    if (isnan(temperature) || isnan(humidity))
+    {
+        net.send(Command::log("temperature or humidity is not a number").toString());
+    }
+    else
+    {
+        net.send(Command::setValue("esp_oled_temperature", String(temperature, 1)).toString());
+        net.send(Command::setValue("esp_oled_humidity", String(humidity, 1)).toString());
+    }
+
     display.clearDisplay();
     display.setTextColor(SSD1306_WHITE);
     display.display();
@@ -212,6 +286,7 @@ void setup()
 void loop()
 {
     net.update();
+    updateDHT();
     updateDT();
     updateDisplay();
 }
