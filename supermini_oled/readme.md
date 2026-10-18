@@ -20,6 +20,4 @@ VCC         5V
 
 ## Картинки
 
-![IMG](./pictures/IMG_2695.jpg)
-
 ![IMG](./pictures/IMG_2693.jpg)
