@@ -1,2 +1,4 @@
 .pio
 .vscode
+/led-client/target
+/led-client/Cargo.lock

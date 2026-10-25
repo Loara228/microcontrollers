@@ -1,7 +1,7 @@
 
 # Board
 
-Контроллер ESP32 C3 Super Mini
+Контроллер ESP32 C3 Super Mini получает команды по USB и меняет цвет RGB светодиодов. Для минамальной сборки требуется сам микроконтроллер и RGB светодиод.
 
 ## Настройка
 
@@ -16,17 +16,30 @@ const uint32_t BAUD = 115200; // Скорость работы serial port. Он
 const uint16_t FRAME_MS = 10; // Задержка цикла loop
 ```
 
-<!-- Настройка клиента в [main.rs](./board/src/main.cpp)
+Для идентификации порта можно запустить [скрипт](../get-path)
 
-```rs
-const BAUD: u32 = 115200; // Скорость работы serial port. Она должна быть одинаковой с обеих сторон
-const PATH: &'static str = "/dev/ttyACM0"; // порт для комуникации
-const DELAY: Duration = Duration::from_millis(50); // Задержка между открытием порта и началом работы. Duration::ZERO работает через раз на ESP32
-```
+## Examples
 
-Для идентификации порта можно запустить [скрипт](./get-path) -->
+Минимальный пример - [basic.rs](./led-client/examples/basic.rs)
 
-## Commands
+### Axum + LED
+
+Простой пример axum сервера, который перенаправляет полученные команды в микроконтроллер 
+
+1. Настройте [http клиент](./led-client/examples/http.rs)
+
+    ```rs
+    const BAUD: u32 = 115200; // Скорость работы serial port. Она должна быть одинаковой с обеих сторон
+    const PATH: &'static str = "/dev/ttyACM0"; // порт для комуникации
+    const DELAY: Duration = Duration::from_millis(50); // Задержка между открытием порта и началом работы. Duration::ZERO работает через раз на ESP32
+    const ADDR: &'static str = "127.0.0.1:5678"; // IP:PORT
+    ```
+
+2. Подключете микроконтроллер по USB к ПК
+3. Запустите http клиент с помощью команды `cargo run --example http`
+4. Отправьте команду с помощью [test.sh](./led-client/examples/test.sh) или запустите [demo.sh](./led-client/examples/demo.sh)
+
+## Команды и аргументы
 
 - **BASE** - Установка базового цвета
     - `R`, `G`, `B` - Аргументы для установки цвета (0-255)
@@ -39,8 +52,3 @@ const DELAY: Duration = Duration::from_millis(50); // Задержка межд�
     - `RELEASE` - Переход от цвета эффекта к базовому (мс)
 
 - **PING** - Возвращает PONG
-
-## Responses
-
-- OK
-- ERR
