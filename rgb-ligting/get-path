@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+shopt -s nullglob
+found=0
+
+for link in /dev/serial/by-id/*; do
+    [[ -e "$link" ]] || continue
+    printf '%s -> %s\n' "$link" "$(readlink -f "$link")"
+    found=1
+done
+
+if (( found == 0 )); then
+    for port in /dev/ttyUSB* /dev/ttyACM*; do
+        [[ -e "$port" ]] || continue
+        echo "$port"
+        found=1
+    done
+fi
+
+if (( found == 0 )); then
+    echo "Ничего не найдено"
+    exit 1
+fi
