@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+shopt -s nullglob
+found=0
+
+for port in /dev/cu.*; do
+    [[ -e "$port" ]] || continue
+    [[ "$port" == "/dev/cu.Bluetooth-Incoming-Port" ]] && continue
+    echo "$port"
+    found=1
+done
+
+if (( found == 0 )); then
+    echo "Последовательный порт не найден"
+    exit 1
+fi

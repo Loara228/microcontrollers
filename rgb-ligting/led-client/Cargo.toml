@@ -10,6 +10,21 @@ serialport = { version = "4.8", default-features = false }
 name = "http"
 path = "examples/http.rs"
 
+[[example]]
+name = "dota_lighting"
+path = "examples/dota_lighting.rs"
+
 [dev-dependencies]
+# для примера http
 axum = "0.8.9"
-tokio = { version = "1.54.1", features = ["macros", "net", "rt-multi-thread"] }
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+
+# для примера dota lighting
+bytes = "1.12.1"
+dota-gsi = { version = "0.5.0", features = ["handlers", "models"] }
+serde_json = "1.0.154"
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
+
+# если подключать в отдельный crate
+# led-client = { package = "led_client", git = "https://github.com/Loara228/microcontrollers.git", branch = "master"}
