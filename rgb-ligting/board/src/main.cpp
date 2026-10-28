@@ -37,7 +37,8 @@ struct Effect
   Color color;
   uint32_t start;
   uint32_t attack, hold, release;
-} fx = {false, {0, 0, 0}, {0, 0, 0}, 0, 0, 0, 0};
+  uint32_t repeats;
+} fx = {false, {0, 0, 0}, {0, 0, 0}, 0, 0, 0, 0, 1};
 
 Color current = {0, 0, 0};
 
@@ -55,21 +56,28 @@ static Color render(uint32_t now)
   if (!fx.active)
     return base;
 
+  uint32_t cycle = fx.attack + fx.hold + fx.release;
   uint32_t el = now - fx.start;
 
+  // Нулевая длительность или все повторы отработаны
+  if (cycle == 0 || el / cycle >= fx.repeats)
+  {
+    fx.active = false;
+    return base;
+  }
+
+  Color from = (el < cycle) ? fx.from : base;
+  el %= cycle;
+
   if (el < fx.attack)
-    return mix(fx.from, fx.color, (float)el / (float)fx.attack);
+    return mix(from, fx.color, (float)el / (float)fx.attack);
   el -= fx.attack;
 
   if (el < fx.hold)
     return fx.color;
   el -= fx.hold;
 
-  if (el < fx.release)
-    return mix(fx.color, base, (float)el / (float)fx.release);
-
-  fx.active = false;
-  return base;
+  return mix(fx.color, base, (float)el / (float)fx.release);
 }
 
 const uint8_t PINS[3] = {PIN_R, PIN_G, PIN_B};
@@ -123,13 +131,14 @@ static void setBase(const Color &c, uint32_t ms)
   baseDur = ms;
 }
 
-static void startEffect(const Color &color, uint32_t attack, uint32_t hold, uint32_t release)
+static void startEffect(const Color &color, uint32_t attack, uint32_t hold, uint32_t release, uint32_t repeats)
 {
   fx.from = current;
   fx.color = color;
   fx.attack = attack;
   fx.hold = hold;
   fx.release = release;
+  fx.repeats = repeats;
   fx.start = millis();
   fx.active = true;
 }
@@ -164,6 +173,7 @@ static bool parseColor(char **t, Color &c)
 
 const uint32_t MAX_MS = 60000;
 const uint8_t MAX_TOK = 10;
+const uint32_t MAX_REPEATS = 10000;
 
 static void handleLine(char *line)
 {
@@ -177,7 +187,7 @@ static void handleLine(char *line)
     *c = toupper(*c);
 
   Color col;
-  long attack, hold, release, id, ms;
+  long attack, hold, release, id, ms, repeats;
 
   if (!strcmp(t[0], "BASE"))
   {
@@ -190,12 +200,14 @@ static void handleLine(char *line)
   }
   else if (!strcmp(t[0], "FX"))
   {
-    if (n != 7 || !parseColor(&t[1], col) ||
+    repeats = 1;
+    if ((n != 7 && n != 8) || !parseColor(&t[1], col) ||
         !toLong(t[4], 0, MAX_MS, attack) ||
         !toLong(t[5], 0, MAX_MS, hold) ||
-        !toLong(t[6], 0, MAX_MS, release))
-      return err(F("usage: FX r g b attack hold release"));
-    startEffect(col, attack, hold, release);
+        !toLong(t[6], 0, MAX_MS, release) ||
+        (n == 8 && !toLong(t[7], 1, MAX_REPEATS, repeats)))
+      return err(F("usage: FX r g b attack hold release [repeats]"));
+    startEffect(col, attack, hold, release, repeats);
     ok();
   }
   else if (!strcmp(t[0], "PING"))
