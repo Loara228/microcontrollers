@@ -1,5 +1,8 @@
 use std::{
-    fmt, io::{self, BufRead, BufReader}, thread, time::Duration,
+    fmt,
+    io::{self, BufRead, BufReader},
+    thread,
+    time::Duration,
 };
 
 use serialport::SerialPort;
@@ -29,18 +32,15 @@ pub enum Command {
         color: Color,
         attack: Duration,
         hold: Duration,
-        release: Duration
-    }
+        release: Duration,
+        repeats: u32,
+    },
 }
 
 impl Color {
     pub fn new(r: u8, g: u8, b: u8) -> Self {
-        Self {
-            r,
-            g,
-            b,
-        }
-    } 
+        Self { r, g, b }
+    }
 }
 
 impl fmt::Display for Color {
@@ -54,14 +54,28 @@ impl fmt::Display for Command {
         match self {
             Command::PING => write!(f, "PING"),
             Command::BASE { color, duration } => write!(f, "BASE {color} {}", duration.as_millis()),
-            Command::FX { color, attack, hold, release } => write!(f, "FX {color}, {} {} {}", attack.as_millis(), hold.as_millis(), release.as_millis()),
+            Command::FX {
+                color,
+                attack,
+                hold,
+                release,
+                repeats,
+            } => write!(
+                f,
+                "FX {color}, {} {} {} {}",
+                attack.as_millis(),
+                hold.as_millis(),
+                release.as_millis(),
+                repeats
+            ),
         }
     }
 }
 
 impl LedClient {
     pub fn write_raw<S: AsRef<str>>(&mut self, cmd: S) -> Result<String, io::Error> {
-        self.writer.write_all(format!("{}\n", cmd.as_ref()).as_bytes())?;
+        self.writer
+            .write_all(format!("{}\n", cmd.as_ref()).as_bytes())?;
         self.writer.flush()?;
 
         let mut replay = String::new();
@@ -74,7 +88,11 @@ impl LedClient {
     }
 
     pub fn write_command(&mut self, cmd: Command) -> Result<String, io::Error> {
-        self.write_raw(cmd.to_string())
+        let reply = self.write_raw(cmd.to_string())?;
+        if reply.starts_with("ERR") {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, reply));
+        }
+        Ok(reply)
     }
 }
 

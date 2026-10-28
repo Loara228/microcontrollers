@@ -11,14 +11,13 @@ use dota::{
     ServerBuilder,
     components::{GameState, heroes::GameHeroes, players::GamePlayers},
 };
-
 use led_client::{Color, Command, LedClient};
 use tokio::sync::Mutex;
 use tracing::{error, info, level_filters::LevelFilter, warn};
 
-const BAUD: u32 = 115200;
-const PORT: &'static str = "/dev/cu.usbmodem101";
-const TIMEOUT: Duration = Duration::from_millis(50);
+const LED_BAUD: u32 = 115200;
+const LED_PORT: &str = "/dev/cu.usbmodem101";
+const LED_TIMEOUT: Duration = Duration::from_millis(500);
 
 const GSI_CONF_FILENAME: &str = "gamestate_integration_loara.cfg";
 const GSI_CONF_CONTENT: &str = r#""Dota 2 Game State Integration Configuration"
@@ -45,6 +44,7 @@ static PREV: StdMutex<Option<Snapshot>> = StdMutex::new(None);
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 struct Snapshot {
     kills: Option<u16>,
+    assists: Option<u16>,
     alive: Option<bool>,
     smoked: Option<bool>,
     magic_immune: Option<bool>,
@@ -59,6 +59,7 @@ impl Snapshot {
 
         if let Some(GamePlayers::Playing(player)) = &state.players {
             s.kills = Some(player.kills);
+            s.assists = Some(player.assists)
         }
         if let Some(GameHeroes::Playing(hero)) = &state.heroes {
             s.alive = hero.alive;
@@ -80,6 +81,7 @@ impl Snapshot {
             }
         }
         set(&mut self.kills, new.kills);
+        set(&mut self.assists, new.assists);
         set(&mut self.alive, new.alive);
         set(&mut self.smoked, new.smoked);
         set(&mut self.magic_immune, new.magic_immune);
@@ -92,6 +94,7 @@ impl Snapshot {
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Change {
     Kill { total: u16 },
+    Assist { total: u16 },
     Died,
     Respawned,
     LevelUp(u8),
@@ -114,6 +117,10 @@ fn diff(old: &Snapshot, new: &Snapshot) -> Vec<Change> {
     // Только если появляются фраги, а не уменьшаются
     match (old.kills, new.kills) {
         (Some(o), Some(n)) if n > o => out.push(Change::Kill { total: n }),
+        _ => {}
+    }
+    match (old.assists, new.assists) {
+        (Some(o), Some(n)) if n > o => out.push(Change::Assist { total: n }),
         _ => {}
     }
     match (old.level, new.level) {
@@ -164,28 +171,39 @@ fn base_color() -> Color {
 fn command_for(change: Change) -> Option<Command> {
     match change {
         Change::Kill { .. } => Some(Command::FX {
-            color: Color::new(255, 0, 149),
+            color: Color::new(0, 0, 0),
+            attack: Duration::from_millis(60),
+            hold: Duration::from_millis(30),
+            release: Duration::from_millis(60),
+            repeats: 4,
+        }),
+        Change::Assist { .. } => Some(Command::FX {
+            color: Color::new(35, 255, 22),
             attack: Duration::from_millis(200),
-            hold: Duration::ZERO,
+            hold: Duration::from_millis(300),
             release: Duration::from_millis(400),
+            repeats: 1,
         }),
         Change::Died => Some(Command::FX {
             color: Color::new(255, 0, 0),
-            attack: Duration::from_secs(10),
-            hold: Duration::from_secs(5),
-            release: Duration::from_secs(5),
+            attack: Duration::from_millis(200),
+            hold: Duration::from_secs(60),
+            release: Duration::from_secs(60),
+            repeats: 99,
         }),
         Change::Respawned => Some(Command::FX {
             color: Color::new(35, 255, 22),
-            attack: Duration::from_millis(1500),
-            hold: Duration::from_secs(2),
-            release: Duration::from_secs(5),
+            attack: Duration::from_millis(200),
+            hold: Duration::from_secs(1),
+            release: Duration::from_secs(3),
+            repeats: 1,
         }),
         Change::LevelUp(_) => Some(Command::FX {
             color: Color::new(255, 255, 30),
             attack: Duration::from_millis(100),
             hold: Duration::from_secs(1),
             release: Duration::from_secs(2),
+            repeats: 1,
         }),
         Change::DayTime(true) => Some(Command::BASE {
             color: base_color(),
@@ -195,9 +213,23 @@ fn command_for(change: Change) -> Option<Command> {
             color: Color::new(100, 15, 255),
             duration: Duration::from_secs(2),
         }),
-        Change::Smoked(_) => None,
+        Change::Smoked(true) => Some(Command::FX {
+            color: Color::new(255, 0, 255),
+            attack: Duration::from_millis(200),
+            hold: Duration::from_secs(60),
+            release: Duration::from_millis(200),
+            repeats: 99,
+        }),
+        Change::Smoked(false) => Some(Command::FX {
+            color: Color::new(255, 0, 0),
+            attack: Duration::from_millis(100),
+            hold: Duration::from_secs(1),
+            release: Duration::from_millis(500),
+            repeats: 1,
+        }),
         Change::MagicImmune(_) => None,
-        Change::Paused(_) => None,
+        Change::Paused(true) => None,
+        Change::Paused(false) => None,
     }
 }
 
@@ -212,8 +244,8 @@ async fn main() -> io::Result<()> {
         process::exit(1);
     }
 
-    let mut led = led_client::new(BAUD, PORT, TIMEOUT)
-        .map_err(|e| Error::other(format!("Failed to open LED port {PORT}: {e:?}")))?;
+    let mut led = led_client::new(LED_BAUD, LED_PORT, LED_TIMEOUT)
+        .map_err(|e| Error::other(format!("Failed to open LED port {LED_PORT}: {e:?}")))?;
 
     rgb_fade(&mut led).await?;
 
@@ -264,7 +296,7 @@ async fn handler(event: bytes::Bytes) -> Result<(), serde_json::Error> {
 }
 
 async fn rgb_fade(led: &mut LedClient) -> io::Result<()> {
-    let t = Duration::from_millis(700);
+    let t = Duration::from_millis(350);
     led.write_command(Command::BASE {
         color: Color::new(255, 0, 0),
         duration: t,
